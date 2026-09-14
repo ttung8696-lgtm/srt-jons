@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# libgomp1 cần cho ctranslate2 (engine Offline NLLB)
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Thư viện cho engine Offline. Engine Google không cần thư viện nào.
+RUN pip install --no-cache-dir ctranslate2 sentencepiece huggingface_hub
+
+# Tool = 1 file duy nhất
+COPY srt2json.py .
+
+# Tải sẵn model NLLB (~650MB) vào image lúc build
+# → engine Offline chạy được ngay, không phụ thuộc Google
+RUN python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('JustFrederik/nllb-200-distilled-600M-ct2-int8', \
+    local_dir='/app/models/nllb600')"
+
+# Hugging Face Spaces chạy container với user ID 1000 (không phải root)
+RUN useradd -m -u 1000 user && chown -R user:user /app
+USER user
+
+ENV SRT2JSON_MODEL_DIR=/app/models/nllb600
+EXPOSE 7860
+
+# Không có đối số input → mở giao diện web (v1.3+)
+CMD ["python", "srt2json.py", "--no-browser", "--host", "0.0.0.0", "--port", "7860"]
